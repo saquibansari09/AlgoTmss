@@ -1,0 +1,539 @@
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  FlatList,
+  Image,
+} from "react-native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
+import axios from "axios";
+import { Modal, Pressable } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+
+
+export default function OpenTicketsScreen() {
+  const navigation = useNavigation(); // ✅ ADD THIS
+  const [search, setSearch] = useState("");
+
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedImage, setSelectedImage] = useState("");
+
+  // api fetching for closing
+
+  const getClosedTickets = async () => {
+    try {
+      setLoading(false);
+
+      const response = await axios.get(
+        "https://algotrack.in/algoTMS/api/Ticket/GetClosedTickets",
+        {
+          params: {
+            CompanyID: 8,
+            UserID: "6296971A-523C-4778-B9D5-59381B3B9A77",
+          },
+        },
+      );
+
+      console.log("Closed Tickets:", response.data);
+
+      if (response.data.success) {
+        setData(response.data.data);
+      } else {
+        setData([]);
+      }
+    } catch (error) {
+      console.log(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+  useCallback(() => {
+    getClosedTickets();
+  }, [])
+);
+
+  // Searching filter condition uppper and lower and cameleCase
+  const filteredData = data.filter((item) =>
+    (item.registrationNo || "").toLowerCase().includes(search.toLowerCase()),
+  );
+  // downloadexcel file code
+ const downloadExcel = async () => {
+  try {
+   const headers = [
+  "Ticket ID",
+  "Registration No",
+  "Client Name",
+  "Location",
+  "Region",
+  "Algo ID",
+  "Restart Cooler",
+  "Subject",
+  "Issued By",
+  "Created",
+  "Closed",
+  "Total Days",
+  "Action",
+  "Status",
+];
+
+    let csv = headers.join(",") + "\n";
+
+  filteredData.forEach((item) => {
+  csv += [
+    `"${item.ticketID}"`,
+    `"${item.registrationNo}"`,
+    `"${item.clientName}"`,
+    `"${item.location}"`,
+    `"${item.region}"`,
+    `"${item.algoID}"`,
+    `"${item.restartCooler}"`,
+    `"${item.subject}"`,
+    `"${item.issuedBy}"`,
+    `"${item.created}"`,
+    `"${item.closed}"`,
+    `"${item.totalNoofdays}"`,
+    `"${item.action}"`,
+    `"${item.status}"`,
+  ].join(",") + "\n";
+});
+
+    const fileUri = FileSystem.cacheDirectory + "CloseTickets.csv";
+
+    await FileSystem.writeAsStringAsync(fileUri, csv, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+
+    const available = await Sharing.isAvailableAsync();
+
+    if (available) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: "text/csv",
+        dialogTitle: "Export Close Tickets",
+      });
+    } else {
+      alert("CSV Saved: " + fileUri);
+    }
+  } catch (error) {
+    console.log("Excel Error:", error);
+    alert(error.message);
+  }
+};
+
+  // download for pdf
+  const downloadPDF = async () => {
+    try {
+      let rows = "";
+
+      filteredData.forEach((item) => {
+     rows += `
+<tr>
+<td>${item.ticketID}</td>
+<td>${item.registrationNo}</td>
+<td>${item.clientName}</td>
+<td>${item.location}</td>
+<td>${item.region}</td>
+<td>${item.algoID}</td>
+<td>${item.restartCooler}</td>
+<td>${item.subject}</td>
+<td>${item.issuedBy}</td>
+<td>${item.created}</td>
+<td>${item.closed}</td>
+<td>${item.totalNoofdays}</td>
+<td>${item.action}</td>
+<td>${item.status}</td>
+<td>${item.Gallary}</td>
+</tr>
+`;
+      });
+
+      const html = `
+      <html>
+      <head>
+      <style>
+  @page {
+    size: A3 landscape;
+    margin: 10px;
+  }
+
+  body{
+    font-family: Arial, sans-serif;
+    font-size:10px;
+    padding:10px;
+  }
+
+  h2{
+    text-align:center;
+    margin-bottom:15px;
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    table-layout:fixed;
+  }
+
+  th,td{
+    border:1px solid #000;
+    padding:6px;
+    text-align:center;
+    word-wrap:break-word;
+    font-size:9px;
+  }
+
+  th{
+    background:#d9d9d9;
+  }
+</style>
+      </head>
+      <body>
+      <h2>Close Tickets</h2>
+
+      <table border="1" cellspacing="0" cellpadding="5">
+        <tr>
+       <th>Ticket ID</th>
+<th>Registration No</th>
+<th>Client Name</th>
+<th>Location</th>
+<th>Region</th>
+<th>Algo ID</th>
+<th>Restart Cooler</th>
+<th>Subject</th>
+<th>Issued By</th>
+<th>Created</th>
+<th>Closed</th>
+<th>Total Days</th>
+<th>Action</th>
+<th>Status</th>
+<th>Gallary</th>
+        </tr>
+
+        ${rows}
+      </table>
+
+      </body>
+      </html>
+    `;
+
+      const { uri } = await Print.printToFileAsync({ html });
+
+      await Sharing.shareAsync(uri);
+    } catch (error) {
+      console.log("PDF Error:", error);
+      alert(error.message);
+    }
+  };
+
+  const renderItem = ({ item }) => (
+    <View style={styles.row}>
+     <Text style={styles.cell}>{item.ticketID}</Text>
+<Text style={styles.cell}>{item.registrationNo}</Text>
+<Text style={styles.cell}>{item.clientName}</Text>
+<Text style={styles.cell}>{item.location}</Text>
+<Text style={styles.cell}>{item.region}</Text>
+<Text style={styles.cell}>{item.algoID}</Text>
+<Text style={styles.cell}>{item.restartCooler}</Text>
+<Text style={styles.cell}>{item.subject}</Text>
+<Text style={styles.cell}>{item.issuedBy}</Text>
+<Text style={styles.cell}>{item.created}</Text>
+<Text style={styles.cell}>{item.closed}</Text>
+<Text style={styles.cell}>{item.totalNoofdays}</Text>
+<Text style={styles.cell}>{item.action}</Text>
+<Text style={styles.cell}>{item.status}</Text>
+  <View style={styles.galleryCell}>
+  {item.gallery ? (
+    <TouchableOpacity
+      onPress={() => {
+        setSelectedImage(item.gallery);
+        setModalVisible(true);
+      }}
+    >
+      <Text style={styles.viewLink}>View</Text>
+    </TouchableOpacity>
+  ) : (
+    <Text>No Image</Text>
+  )}
+</View>
+    </View>
+  );
+
+
+  
+
+  return (
+    <View style={styles.container}>
+      {/* 🔝 TOP BUTTON BAR */}
+     <View style={styles.headingContainer}>
+       {/* Left Side */}
+       <View style={styles.headingLeft}>
+         <View style={styles.leftBorder} />
+         <Text style={styles.heading}>Close Tickets</Text>
+       </View>
+     
+       {/* Right Side */}
+     <View style={styles.topBar}>
+  {/* New */}
+  <TouchableOpacity
+    style={styles.btn}
+    onPress={() =>
+      navigation.navigate("Home", {
+        screen: "New",
+      })
+    }
+  >
+    <Ionicons
+      name="add-circle"
+      size={28}
+      color="#8B5E3C"
+    />
+  </TouchableOpacity>
+
+  {/* Excel */}
+  <TouchableOpacity
+    style={styles.btn}
+    onPress={downloadExcel}
+  >
+    <Ionicons
+      name="grid"
+      size={28}
+      color="green"
+    />
+  </TouchableOpacity>
+
+  {/* PDF */}
+  <TouchableOpacity
+    style={styles.btn}
+    onPress={downloadPDF}
+  >
+    <Ionicons
+      name="document-text"
+      size={28}
+      color="red"
+    />
+  </TouchableOpacity>
+</View>
+     </View>
+
+     {/* 🔍 SEARCH BAR */}
+<View style={styles.searchBox}>
+  <Ionicons
+    name="search"
+    size={20}
+    color="#8B5E3C"
+    style={styles.searchIcon}
+    
+  />
+
+  <TextInput
+    style={styles.input}
+    value={search}
+    onChangeText={setSearch}
+    placeholder="Search ticket..."
+    placeholderTextColor="#8B5E3C"
+  />
+</View>
+
+      {/* 🔥 TABLE */}
+      <ScrollView horizontal>
+        <View>
+          {/* HEADER */}
+          <View style={[styles.row, styles.header]}>
+           <Text style={styles.headerCell}>Ticket ID</Text>
+<Text style={styles.headerCell}>Registration No</Text>
+<Text style={styles.headerCell}>Client Name</Text>
+<Text style={styles.headerCell}>Location</Text>
+<Text style={styles.headerCell}>Region</Text>
+<Text style={styles.headerCell}>Algo ID</Text>
+<Text style={styles.headerCell}>Restart Cooler</Text>
+<Text style={styles.headerCell}>Subject</Text>
+<Text style={styles.headerCell}>Issued By</Text>
+<Text style={styles.headerCell}>Created</Text>
+<Text style={styles.headerCell}>Closed</Text>
+<Text style={styles.headerCell}>Total Days</Text>
+<Text style={styles.headerCell}>Action</Text>
+<Text style={styles.headerCell}>Status</Text>
+<Text style={styles.headerCell}>Gallary</Text>
+          </View>
+
+          {/* ROWS */}
+          <FlatList
+            data={filteredData}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.ticketID.toString()}
+          />
+        </View>
+      </ScrollView>
+      <Modal
+  visible={modalVisible}
+  transparent={true}
+  animationType="fade"
+>
+  <View style={styles.modalContainer}>
+    <Pressable
+      style={styles.closeBtn}
+      onPress={() => setModalVisible(false)}
+    >
+      <Text style={{ color: "#fff", fontSize: 18 }}>✕</Text>
+    </Pressable>
+
+    <Image
+      source={{
+        uri: `data:image/jpeg;base64,${selectedImage}`,
+      }}
+      style={styles.fullImage}
+      resizeMode="contain"
+    />
+  </View>
+</Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+    padding: 10,
+  },
+  
+
+  topBar: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10,
+  },
+
+  btn: {
+  paddingVertical: 4,
+  paddingHorizontal: 12,
+  borderWidth: 0.5,
+   borderColor: "#8B5E3C",
+  borderRadius: 8,
+  backgroundColor: "#f5f5f5",
+  marginLeft: 8,
+},
+
+  searchBox: {
+  flexDirection: "row",
+  alignItems: "center",
+  backgroundColor: "#fff",
+  borderWidth: 0.5,
+   borderColor: "#8B5E3C",
+  borderRadius: 8,
+  paddingHorizontal: 10,
+  marginVertical: 10,
+},
+
+searchIcon: {
+  marginRight: 8,
+},
+
+input: {
+  flex: 1,
+  height: 45,
+  color: "#000",
+  fontSize: 15,
+},
+
+  header: {
+    backgroundColor: "#8B5E3C",
+  },
+
+  row: {
+    flexDirection: "row",
+  },
+
+  headerCell: {
+    width: 120,
+    fontWeight: "bold",
+    padding: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+
+  cell: {
+    width: 120,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: "#eee",
+  },
+
+ headingContainer: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 12,
+},
+
+headingLeft: {
+  flexDirection: "row",
+  alignItems: "center",
+  flex: 1,
+},
+
+leftBorder: {
+  width: 5,
+  height: 28,
+  backgroundColor: "#8B5E3C",
+  borderRadius: 3,
+  marginRight: 8,
+},
+
+
+heading: {
+  fontSize: 15,
+  fontWeight: "bold",
+  color: "#333",
+},
+topBar: {
+  flexDirection: "row",
+  alignItems: "center",
+},
+
+
+// for gallary img css code
+
+galleryCell: {
+  width: 120,
+  justifyContent: "center",
+  alignItems: "center",
+  borderWidth: 1,
+  borderColor: "#eee",
+},
+viewLink: {
+  color: "#007AFF",
+  fontWeight: "bold",
+  textDecorationLine: "underline",
+  textAlign: "center",
+},
+
+modalContainer: {
+  flex: 1,
+  backgroundColor: "rgba(0,0,0,0.95)",
+  justifyContent: "center",
+  alignItems: "center",
+},
+
+fullImage: {
+  width: "95%",
+  height: "80%",
+},
+
+closeBtn: {
+  position: "absolute",
+  top: 50,
+  right: 20,
+  zIndex: 10,
+},
+});
+
